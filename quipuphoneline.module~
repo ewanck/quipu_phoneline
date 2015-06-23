@@ -1,0 +1,381 @@
+<?php
+
+//Defines block for Quipu Phoneline module;
+
+function quipuphoneline_block_info() {
+  $blocks['quipuphoneline'] = array(
+    'info' => t('Quipu Phoneline'),
+    'cache' => DRUPAL_CACHE_PER_ROLE,
+  );
+  return $blocks;
+}
+
+//Defines block content
+
+function quipuphoneline_block_view() {
+  $block['subject'] = t('All Urls');
+  if (user_access('access content')) {
+    $urls = '571';
+//    $items = quipuphoneline_loadstories();
+    $items[] = array('data' => quipuphoneline_loadstories());
+//    $block['content'] = theme('item_list', array('items' => $urls));
+//    $block['content'] = quipuphoneline_loadstories();
+  };
+  return $block; 
+};
+
+
+//Stores incoming audio from phoneline as Audio Story content type.
+
+function quipuphoneline_storeaudio($filename, $length, $cid) {
+  watchdog('debug', t($filename));
+  $nid = '';
+  $query = db_query('SELECT fid FROM {file_managed} WHERE filename = :name', array('name' => $filename));
+  $result = $query->fetchAll();
+ //   ->fields('t', array('fid'))
+ //   ->condition('filename', t($filename))
+ //   ->execute();
+
+  $url = 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/'.$filename;
+  $uri = 'public://'.$filename;
+  watchdog('debug', t($url));
+  $query->fetchAll();
+  $fid = $result[0]->fid;
+  watchdog('debug', t($fid));
+//Create new node object and populate with field data. ->type defines content type, ->uid defines user where '8' is 'phoneline' user. (all content input from modules should use this Uid.)
+//  watchdog('debug', $fid);
+  $newNode = (object) NULL;
+
+  if ($nid != '') {
+    $newNode = node_load($nid);
+  };
+
+  $newNode->uid = "8";
+  $newNode->type = 'audio_story';
+  $newNode->status = 0;
+  $newNode->title = t($url);
+  $newNode->field_audio_link[LANGUAGE_NONE]['0']['value'] = t($url);
+  $newNode->field_length[LANGUAGE_NONE]['0']['value'] = t($length);
+  $newNode->body[LANGUAGE_NONE][0]['value'] = t($url);
+
+//Creates file object using the Fid supplied from Voip script. This allows the file to be downloaded and accessed via the front end player.
+
+  $file = (object) array(
+    'fid' => $fid,
+    'uri' => $uri,
+    'filemime' => file_get_mimetype($uri),
+    'status' =>1,
+    'display' => 1,
+  );
+  $newNode->field_audio_file[LANGUAGE_NONE][0] = (array)$file;
+  $newNode->field_recording_fid[LANGUAGE_NONE][0]['value'] = t($fid);
+  node_save($newNode);
+
+  $nodeId = $newNode->nid;
+
+  $newNode->title = t($nodeId);
+  node_save($newNode);
+  
+//  quipustats_record($cid, $uri, $fid, $filename, $length, $nodeId);
+  return $nodeId;
+};
+
+
+//As above but for feedback messages.
+
+function quipuphoneline_storefeedback($url, $length) {
+  $newNode = (object) NULL;
+  $newNode->uid = "8";
+  $newNode->type = 'feedback_message';
+  $newNode->status = 1;
+  $newNode->title = t($url);
+  $newNode->field_audio_link[LANGUAGE_NONE]['0']['value'] = t($url);
+  $newNode->field_length[LANGUAGE_NONE]['0']['value'] = t($length);
+  $newNode->body[LANGUAGE_NONE][0]['value'] = t($url);
+  node_save($newNode);
+};
+
+
+//Queries database for all published audio stories, to be returned to voip script and played to end user.
+
+function quipuphoneline_loadstories() {
+
+//Uses Entity Field Query as the db_select method does not allow filtering from custom fields in content types. 
+  $callback = array();
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+
+//Check if published - status = 1;
+
+    ->propertyCondition('status', 1)
+    ->propertyCondition('type', 'audio_story')
+    ->propertyOrderBy('created', 'DESC')
+    ->fieldCondition('field_audio_language', 'value', 'en', '!=');
+  $results = $query->execute();
+  if (isset($results['node'])) {
+    $nodes = node_load_multiple(array_keys($results['node']));
+    $length = count($nodes);
+    foreach ($nodes as $node) {
+      if(array_key_exists('und', $node->field_basic_edit)) {
+      	$link = file_create_url($node->field_basic_edit['und'][0]['uri']);
+      } else {
+        $link = file_create_url($node->field_audio_file['und'][0]['uri']);
+      };
+//      $audio_link = field_get_items('node', $node, 'field_audio_link');
+      $role = field_get_items('node', $node, 'field_narrative_role');
+      
+      if($role[0]['tid'] == 44) {
+        if($node->sticky === '0') {
+          $callback['audience']['stickies'][] = $link;
+        } else {
+	  $callback['audience']['normal'][] = $link;
+	};
+      } elseif($role[0]['tid'] == 42) {
+        if($node->sticky === '0') {
+          $callback['contributor']['stickies'][] = $link;
+        } else {
+	  $callback['contributor']['normal'][] = $link;
+	};
+      };
+    };
+//    dpm($callback);
+  };
+
+  $result = array();
+  $i = 1;
+  $contributors = 1;
+  $audience = 1;
+  while($contributors == 1 || $audience == 1) {
+    if($i%3!=0 && $i!=0) {
+      if(count($callback['contributor']['stickies'])>0) {
+        $result[] = $callback['contributor']['stickies'][0];
+	array_splice($callback['contributor']['stickies'],0,1);
+      } elseif (count($callback['contributor']['normal'])>0) {
+        $result[] = $callback['contributor']['normal'][0];
+	array_splice($callback['contributor']['normal'], 0, 1);
+      }	 else {
+        $contributors = 0;
+      };
+    } elseif ($i%3 == 0 && $i!=0) {
+      if(count($callback['audience']['stickies'])>0) {
+        $result[] = $callback['audience']['stickies'][0];
+	array_splice($callback['audience']['stickies'],0,1);
+      } elseif (count($callback['audience']['normal'])>0) {
+        $result[] = $callback['audience']['normal'][0];
+	array_splice($callback['audience']['normal'], 0, 1);
+      } else {
+        $audience = 0;
+      }    
+    }
+    $i = $i + 1;
+  }
+//  dpm($result);
+//Returns a list of Urls which can be looped through in the voip script.
+
+  return $callback;
+};
+
+//Queries the database for the recording matching the Nid to the users keypad input. The user is given their Fid number after confirming their recording, so this function allows them to input the digits and retrieve their specific recording later. 
+
+function quipuphoneline_selectstory($nid) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->propertyCondition('type', 'audio_story')
+    ->propertyCondition('nid', $nid);
+
+//   ->fieldCondition('field_recording_fid', 'value', $fid);
+  $results = $query->execute();
+  if (isset($results['node'])) {
+    $nodes = node_load_multiple(array_keys($results['node']));
+    foreach ($nodes as $node) {
+//      $audio_link = field_get_items('node', $node, 'field_audio_link');
+//      $callback[] = $audio_link[0]['value'];
+      if(array_key_exists('und', $node->field_basic_edit)) {
+      	$callback[] = file_create_url($node->field_basic_edit['und'][0]['uri']);
+      } else {
+        $callback[] = file_create_url($node->field_audio_file['und'][0]['uri']);
+      };
+    };
+
+  };
+  $callback_value = $callback[0]; 
+
+//Returns one specific Url to be played directly in the voipscript
+
+  return $callback_value;
+
+};
+
+//Takes the incoming string and converts it to a list of Urls to be played to the user. In other words it turns a computer generated string into recorded audio of the presenters voice. This is used primarily to deal with Fid's in the phonline but can be used to 'say' all numbers in a human voice. Please not that the returned 'list' is acutally a string with Urls separated by commas and a space. This is essential to allow the voipscript to play them as one piece of audio.
+
+function quipuphoneline_generate_numbers($input_digits) {
+  $urls = array(
+    '0' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/0.mp3, ',
+    '1' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/1.mp3, ',
+    '2' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/2.mp3, ',
+    '3' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/3.mp3, ',
+    '4' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/4.mp3, ',
+    '5' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/5.mp3, ',
+    '6' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/6.mp3, ',
+    '7' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/7.mp3, ',
+    '8' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/8.mp3, ',
+    '9' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/9.mp3, ',
+    );
+
+  $digits = str_split($input_digits);
+  $callback = '';
+  foreach ($digits as $digit) {
+    $callback = $callback . $urls[$digit];;
+  };
+  return $callback;
+};
+
+function quipuphoneline_generate_large_numbers($input_digits) {
+  $urls = array(
+    '0' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/0.mp3, ',
+    '1' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/1.mp3, ',
+    '2' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/2.mp3, ',
+    '3' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/3.mp3, ',
+    '4' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/4.mp3, ',
+    '5' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/5.mp3, ',
+    '6' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/6.mp3, ',
+    '7' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/7.mp3, ',
+    '8' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/8.mp3, ',
+    '9' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/numbers/9.mp3, ',
+    '10' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/10.mp3, ',
+    '11' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/11.mp3, ',
+    '12' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/12.mp3, ',
+    '13' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/13.mp3, ',
+    '14' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/14.mp3, ',
+    '15' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/15.mp3, ',
+    '16' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/16.mp3, ',
+    '17' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/17.mp3, ',
+    '18' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/18.mp3, ',
+    '19' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/19.mp3, ',
+    '20' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/20.mp3, ',
+    '20+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/20_and.mp3, ',
+    '30' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/30.mp3, ',
+    '30+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/30_and.mp3, ',
+    '40' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/40.mp3, ',
+    '40+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/40_and.mp3, ',
+    '50' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/50.mp3, ',
+    '50+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/50_and.mp3, ',
+    '60' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/60.mp3, ',
+    '60+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/60_and.mp3, ',
+    '70' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/70.mp3, ',
+    '70+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/70_and.mp3, ',
+    '80' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/80.mp3, ',
+    '80+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/80_and.mp3, ',
+    '90' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/90.mp3, ',
+    '90+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/90_and.mp3, ',
+    '100' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/100.mp3, ',
+    '100+' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/100_and.mp3, ',
+    '200' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/200.mp3, ',
+    '300' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/300.mp3, ',
+    '400' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/400.mp3, ',
+    '500' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/500.mp3, ',
+    '600' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/600.mp3, ',
+    '700' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/700.mp3, ',
+    '800' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/800.mp3, ',
+    '900' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/900.mp3, ',
+    '1000' => 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/quipuscripts_v1.0/NUMBERS/1000.mp3, ',
+    );
+
+  $digits = str_split($input_digits);
+  $url_string = array();
+  $len = count($digits);
+  $zeros = $len -1;
+
+  foreach ($digits as $digit) {
+    $i = $zeros;
+    if($digit!='0') {
+      while($i>0) {
+        $digit = $digit . '0';
+        $i = $i - 1;
+      };
+      $url_string[] = $urls[$digit];
+    }
+    else {
+      $url_string[] = '';
+    };
+    $zeros = $zeros - 1;
+  };  
+
+  if($digits[$len-2]=='0') {
+    $url_string[$len-2] = '';
+  }
+  else if($digits[$len-1]!='0' && $digits[$len-2]!='1') {
+    $url_string[$len-2] = $urls[$digits[$len-2].'0+'];
+  }
+  else {
+    $url_string[$len-1] = '';
+  };
+
+  if($digits[$len-2]=='1') {
+    $url_string[$len-2] = $urls[$digits[$len-2].$digits[$len-1]];
+  };
+
+  if($digits[$len-3]=='1') {
+    if($digits[$len-2]!='0' || $digits[$len-1]!='0') {
+      $url_string[$len-3] = $urls['100+'];
+    };
+  };
+
+  $callback = '';
+  foreach ($url_string as $url) {
+    $callback = $callback . $url;
+  };
+
+  return $callback;
+};
+
+
+function quipuphoneline_ismobile($caller_number) {
+  $prefix = str_split($caller_number, 4);
+  $ismobile = FALSE;
+  if ($prefix[0] == '+447') {
+    $ismobile = TRUE;
+  };
+  
+  return $ismobile;
+};
+
+function quipuphoneline_record_save_file($recording_public_url, $source, $cid, $duration) {
+  watchdog('debug', "quipuphoneline_record_save_file $recording_public_url, $source, $cid, $duration");
+  $server = Voipserver::getServer($source);
+  $call = VoipCall::load($cid);
+  $args = array(
+    'call' => $call,
+    'duration' => $duration,
+  );
+  $server->audioFileMover($recording_public_url, 'quipuphoneline_record_calculate_duration', $args);
+  $file_name = basename($recording_public_url); 
+  $nid = quipuphoneline_storeaudio($file_name, $duration, $cid);
+  return $nid;
+}
+
+function quipuphoneline_record_on_hang_up($original_call) {
+  $args = array();
+  watchdog('voipscriptsamples', 'About to srt processing record on hang up.', $args, WATCHDOG_INFO);
+  $original_script = $original_call->getScript();
+  $cid = $original_call->getCid();
+  $source = $original_call->getSource();
+  $recording_public_url = $original_script->getVar('recording_public_url');
+  $recording_duration = $original_script->getVar('recording_duration');
+  $result = quipuphoneline_record_save_file($recording_public_url, $source, $cid, $recording_duration);
+  $args = array('@result' => $result);
+  watchdog('voipscriptsamples', 'The callback returned: @result', $args, WATCHDOG_INFO);
+};
+
+function quipuphoneline_record_calculate_duration($file, $audio_url, $args=NULL) {
+  if(isset($args['duration']) && $args['duration'] == -1) {
+    //In case of hangup we get duration -1, so lets calculate it from file object
+    $duration = voipcall_get_audio_duration($file);
+    $original_call = $args['call'];
+    $original_script = $original_call->getScript();
+    $original_script->setVar('recording_duration', $duration);
+    $original_call->setScript($original_script);
+    // update the voipcall with the new values
+    $original_call->save();
+  }
+};
