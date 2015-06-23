@@ -17,9 +17,9 @@ function quipuphoneline_block_view() {
   if (user_access('access content')) {
     $urls = '571';
 //    $items = quipuphoneline_loadstories();
-    $items[] = array('data' => quipuphoneline_loadstories());
+//    $items[] = array('data' => quipuphoneline_loadstories());
 //    $block['content'] = theme('item_list', array('items' => $urls));
-//    $block['content'] = quipuphoneline_loadstories();
+    $block['content'] = 'hello world';
   };
   return $block; 
 };
