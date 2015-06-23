@@ -36,12 +36,13 @@ function quipuphoneline_storeaudio($filename, $length, $cid) {
  //   ->condition('filename', t($filename))
  //   ->execute();
 
-  $url = 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/'.$filename;
+//  $url = 'http://www.projectquipu.com/sites/default/files/'.$filename;
   $uri = 'public://'.$filename;
-  watchdog('debug', t($url));
+  $url = file_create_url($uri);
+  
   $query->fetchAll();
   $fid = $result[0]->fid;
-  watchdog('debug', t($fid));
+
 //Create new node object and populate with field data. ->type defines content type, ->uid defines user where '8' is 'phoneline' user. (all content input from modules should use this Uid.)
 //  watchdog('debug', $fid);
   $newNode = (object) NULL;
@@ -76,6 +77,7 @@ function quipuphoneline_storeaudio($filename, $length, $cid) {
   $newNode->title = t($nodeId);
   node_save($newNode);
   
+
 //  quipustats_record($cid, $uri, $fid, $filename, $length, $nodeId);
   return $nodeId;
 };
@@ -101,6 +103,7 @@ function quipuphoneline_storefeedback($url, $length) {
 function quipuphoneline_loadstories() {
 
 //Uses Entity Field Query as the db_select method does not allow filtering from custom fields in content types. 
+
   $callback = array();
   $query = new EntityFieldQuery();
   $query->entityCondition('entity_type', 'node')
@@ -173,6 +176,7 @@ function quipuphoneline_loadstories() {
 //Returns a list of Urls which can be looped through in the voip script.
 
   return $callback;
+
 };
 
 //Queries the database for the recording matching the Nid to the users keypad input. The user is given their Fid number after confirming their recording, so this function allows them to input the digits and retrieve their specific recording later. 

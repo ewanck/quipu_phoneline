@@ -4,7 +4,11 @@
 
 function quipuphoneline_block_info() {
   $blocks['quipuphoneline'] = array(
+<<<<<<< HEAD
     'info' => t('Quipu Phoneline'),
+=======
+    'info' => t('Quipu Save'),
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
     'cache' => DRUPAL_CACHE_PER_ROLE,
   );
   return $blocks;
@@ -16,10 +20,17 @@ function quipuphoneline_block_view() {
   $block['subject'] = t('All Urls');
   if (user_access('access content')) {
     $urls = '571';
+<<<<<<< HEAD
 //    $items = quipuphoneline_loadstories();
     $items[] = array('data' => quipuphoneline_loadstories());
 //    $block['content'] = theme('item_list', array('items' => $urls));
 //    $block['content'] = quipuphoneline_loadstories();
+=======
+    $items = array();
+    $items[] = array('data' => 'test');
+//    $block['content'] = theme('item_list', array('items' => $urls));
+    $block['content'] = t(quipuphoneline_generate_large_numbers('1135'));
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
   };
   return $block; 
 };
@@ -38,10 +49,16 @@ function quipuphoneline_storeaudio($filename, $length, $cid) {
 
   $url = 'http://sandbox.chakafilms.com/sandbox/projectquipu/sites/default/files/'.$filename;
   $uri = 'public://'.$filename;
+<<<<<<< HEAD
   watchdog('debug', t($url));
   $query->fetchAll();
   $fid = $result[0]->fid;
   watchdog('debug', t($fid));
+=======
+  
+  $query->fetchAll();
+  $fid = $result[0]->fid;
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
 //Create new node object and populate with field data. ->type defines content type, ->uid defines user where '8' is 'phoneline' user. (all content input from modules should use this Uid.)
 //  watchdog('debug', $fid);
   $newNode = (object) NULL;
@@ -76,7 +93,11 @@ function quipuphoneline_storeaudio($filename, $length, $cid) {
   $newNode->title = t($nodeId);
   node_save($newNode);
   
+<<<<<<< HEAD
 //  quipustats_record($cid, $uri, $fid, $filename, $length, $nodeId);
+=======
+  quipustats_record($cid, $uri, $fid, $filename, $length, $nodeId);
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
   return $nodeId;
 };
 
@@ -101,7 +122,11 @@ function quipuphoneline_storefeedback($url, $length) {
 function quipuphoneline_loadstories() {
 
 //Uses Entity Field Query as the db_select method does not allow filtering from custom fields in content types. 
+<<<<<<< HEAD
   $callback = array();
+=======
+
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
   $query = new EntityFieldQuery();
   $query->entityCondition('entity_type', 'node')
 
@@ -109,6 +134,7 @@ function quipuphoneline_loadstories() {
 
     ->propertyCondition('status', 1)
     ->propertyCondition('type', 'audio_story')
+<<<<<<< HEAD
     ->propertyOrderBy('created', 'DESC')
     ->fieldCondition('field_audio_language', 'value', 'en', '!=');
   $results = $query->execute();
@@ -173,6 +199,23 @@ function quipuphoneline_loadstories() {
 //Returns a list of Urls which can be looped through in the voip script.
 
   return $callback;
+=======
+    ->propertyOrderBy('created', 'DESC');
+  $results = $query->execute();
+  if (isset($results['node'])) {
+    $nodes = node_load_multiple(array_keys($results['node']));
+
+    foreach ($nodes as $node) {
+      $audio_link = field_get_items('node', $node, 'field_audio_link');
+      $callback[] = $audio_link[0]['value'];
+    };
+  };
+
+//Returns a list of Urls which can be looped through in the voip script.
+
+  return $callback;
+
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
 };
 
 //Queries the database for the recording matching the Nid to the users keypad input. The user is given their Fid number after confirming their recording, so this function allows them to input the digits and retrieve their specific recording later. 
@@ -188,6 +231,7 @@ function quipuphoneline_selectstory($nid) {
   if (isset($results['node'])) {
     $nodes = node_load_multiple(array_keys($results['node']));
     foreach ($nodes as $node) {
+<<<<<<< HEAD
 //      $audio_link = field_get_items('node', $node, 'field_audio_link');
 //      $callback[] = $audio_link[0]['value'];
       if(array_key_exists('und', $node->field_basic_edit)) {
@@ -195,6 +239,10 @@ function quipuphoneline_selectstory($nid) {
       } else {
         $callback[] = file_create_url($node->field_audio_file['und'][0]['uri']);
       };
+=======
+      $audio_link = field_get_items('node', $node, 'field_audio_link');
+      $callback[] = $audio_link[0]['value'];
+>>>>>>> 7747d135ecae06bc7735b4a839aa849a69a35136
     };
 
   };
